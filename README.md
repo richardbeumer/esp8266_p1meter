@@ -1,9 +1,11 @@
 # esp8266_p1meter
 
-Software for the ESP2866 that sends P1 smart meter data to an mqtt broker (with OTA firmware updates)
+This script is a concept and still requires testing!
+
+It provides software for the ESP8266 to send P1 smart meter data to an MQTT broker in JSON format, compatible with ![mr-manuel/venus-os_dbus-mqtt-grid](https://github.com/mr-manuel/venus-os_dbus-mqtt-grid). The script emulates a physical Grid/Genset/AC Load Meter in the Venus OS, allowing you to use your P1 smart meter instead of a device like the VM-3P75CT. With this JSON structure, there is no need for an intermediate platform, such as Home Assistant.
 
 ## about this fork
-This fork (tries) to add support for the `Landys and Gyr E360` smartmeter (DSMR5.0)
+This fork (tries) to add support for the `Landys and Gyr E360` smartmeter (DSMR5.0) and upload the data to MQTT
 
 The ![original source](https://github.com/fliphess/esp8266_p1meter) has issues with DSMR5.0 meters who like to send telegrams every 1 second at a high 115200 baud rate. 
 This causes the used SoftwareSerial to struggle to keep up and thus only receives corrupted messages. This fork switches to using the main Hardware serial port (RX) for communication with the meter.

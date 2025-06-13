@@ -8,6 +8,7 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 // * Include settings
 #include "settings.h"
@@ -16,9 +17,13 @@
 Ticker ticker;
 
 // * Initiate WIFI client
-WiFiClient espClient;
+//WiFiClient espClient;
+WiFiClientSecure espClient;
+
+
 
 // * Initiate MQTT client
+// Use WiFiClientSecure for TLS/SSL connection
 PubSubClient mqtt_client(espClient);
 
 // **********************************
@@ -73,7 +78,7 @@ bool mqtt_reconnect()
 {
     // * Loop until we're reconnected
     int MQTT_RECONNECT_RETRIES = 0;
-
+    mqtt_client.setBufferSize(512); // Set the buffer size for MQTT messages
     while (!mqtt_client.connected() && MQTT_RECONNECT_RETRIES < MQTT_MAX_RECONNECT_TRIES)
     {
         MQTT_RECONNECT_RETRIES++;
@@ -129,30 +134,52 @@ void send_metric(String name, long metric)
 
 void send_data_to_broker()
 {
-    send_metric("consumption_low_tarif", CONSUMPTION_LOW_TARIF);
-    send_metric("consumption_high_tarif", CONSUMPTION_HIGH_TARIF);
-    send_metric("returndelivery_low_tarif", RETURNDELIVERY_LOW_TARIF);
-    send_metric("returndelivery_high_tarif", RETURNDELIVERY_HIGH_TARIF);
-    send_metric("actual_consumption", ACTUAL_CONSUMPTION);
-    send_metric("actual_returndelivery", ACTUAL_RETURNDELIVERY);
+    // Creëer een JSON-document
+    StaticJsonDocument<512> doc;
 
-    send_metric("l1_instant_power_usage", L1_INSTANT_POWER_USAGE);
-    send_metric("l2_instant_power_usage", L2_INSTANT_POWER_USAGE);
-    send_metric("l3_instant_power_usage", L3_INSTANT_POWER_USAGE);
-    send_metric("l1_instant_power_current", L1_INSTANT_POWER_CURRENT);
-    send_metric("l2_instant_power_current", L2_INSTANT_POWER_CURRENT);
-    send_metric("l3_instant_power_current", L3_INSTANT_POWER_CURRENT);
-    send_metric("l1_voltage", L1_VOLTAGE);
-    send_metric("l2_voltage", L2_VOLTAGE);
-    send_metric("l3_voltage", L3_VOLTAGE);
+    // Voeg gridinformatie toe
+    if (ACTUAL_CONSUMPTION != 0) {
+        doc["grid"]["power"] = ACTUAL_CONSUMPTION;
+    } else if (ACTUAL_RETURNDELIVERY != 0) {
+        doc["grid"]["power"] = -ACTUAL_RETURNDELIVERY;
+    }
+     
+    doc["grid"]["voltage"] = round(((L1_VOLTAGE + L2_VOLTAGE + L3_VOLTAGE) / 3.0 / 1000) * 10) / 10.0;
     
-    send_metric("gas_meter_m3", GAS_METER_M3);
+    // Voeg L1 toe
+    if (L1_INSTANT_POWER_USAGE != 0) {
+        doc["grid"]["L1"]["power"] = L1_INSTANT_POWER_USAGE;
+    }
+    else if (L1_INSTANT_POWER_RETURNDELIVERY != 0) {
+        doc["grid"]["L1"]["power"] = -L1_INSTANT_POWER_RETURNDELIVERY;
+    }
 
-    send_metric("actual_tarif_group", ACTUAL_TARIF);
-    send_metric("short_power_outages", SHORT_POWER_OUTAGES);
-    send_metric("long_power_outages", LONG_POWER_OUTAGES);
-    send_metric("short_power_drops", SHORT_POWER_DROPS);
-    send_metric("short_power_peaks", SHORT_POWER_PEAKS);
+    doc["grid"]["L1"]["voltage"] = L1_VOLTAGE / 1000.0;
+    
+    // Voeg L2 toe
+    if (L2_INSTANT_POWER_USAGE != 0) {
+        doc["grid"]["L2"]["power"] = L2_INSTANT_POWER_USAGE;
+    }
+    else if (L2_INSTANT_POWER_RETURNDELIVERY != 0) {
+        doc["grid"]["L2"]["power"] = -L2_INSTANT_POWER_RETURNDELIVERY;
+    }
+    doc["grid"]["L2"]["voltage"] = L2_VOLTAGE / 1000.0;
+    
+    // Voeg L3 toe
+    if (L3_INSTANT_POWER_USAGE != 0) {
+        doc["grid"]["L3"]["power"] = L3_INSTANT_POWER_USAGE;
+    }
+    else if (L3_INSTANT_POWER_RETURNDELIVERY != 0) {
+        doc["grid"]["L3"]["power"] = -L3_INSTANT_POWER_RETURNDELIVERY;
+    }
+    doc["grid"]["L3"]["voltage"] = L3_VOLTAGE / 1000.0;
+    
+    // Serialiseer het JSON-document naar een string
+    char payload[512];
+    serializeJson(doc, payload);
+
+    // Verzend het JSON-bericht naar de MQTT-broker
+    mqtt_client.publish(MQTT_JSON_TOPIC, payload);
 }
 
 // **********************************
@@ -329,23 +356,25 @@ bool decode_telegram(int len)
         L3_INSTANT_POWER_USAGE = getValue(telegram, len, '(', '*');
     }
 
-    // 1-0:31.7.0(002*A)
-    // 1-0:31.7.0 = Instantane stroom Elektriciteit L1
-    if (strncmp(telegram, "1-0:31.7.0", strlen("1-0:31.7.0")) == 0)
+    // 1-0:22.7.0(00.378*kW)
+    // 1-0:22.7.0 = Instantaan vermogen Elektriciteit terug levering L1
+    if (strncmp(telegram, "1-0:22.7.0", strlen("1-0:22.7.0")) == 0)
     {
-        L1_INSTANT_POWER_CURRENT = getValue(telegram, len, '(', '*');
+        L1_INSTANT_POWER_RETURNDELIVERY = getValue(telegram, len, '(', '*');
     }
-    // 1-0:51.7.0(002*A)
-    // 1-0:51.7.0 = Instantane stroom Elektriciteit L2
-    if (strncmp(telegram, "1-0:51.7.0", strlen("1-0:51.7.0")) == 0)
+
+    // 1-0:42.7.0(00.378*kW)
+    // 1-0:42.7.0 = Instantaan vermogen Elektriciteit terug levering L2
+    if (strncmp(telegram, "1-0:42.7.0", strlen("1-0:42.7.0")) == 0)
     {
-        L2_INSTANT_POWER_CURRENT = getValue(telegram, len, '(', '*');
+        L2_INSTANT_POWER_RETURNDELIVERY = getValue(telegram, len, '(', '*');
     }
-    // 1-0:71.7.0(002*A)
-    // 1-0:71.7.0 = Instantane stroom Elektriciteit L3
-    if (strncmp(telegram, "1-0:71.7.0", strlen("1-0:71.7.0")) == 0)
+
+    // 1-0:62.7.0(00.378*kW)
+    // 1-0:62.7.0 = Instantaan vermogen Elektriciteit terug levering L3
+    if (strncmp(telegram, "1-0:62.7.0", strlen("1-0:62.7.0")) == 0)
     {
-        L3_INSTANT_POWER_CURRENT = getValue(telegram, len, '(', '*');
+        L3_INSTANT_POWER_RETURNDELIVERY = getValue(telegram, len, '(', '*');
     }
 
     // 1-0:32.7.0(232.0*V)
@@ -367,52 +396,10 @@ bool decode_telegram(int len)
         L3_VOLTAGE = getValue(telegram, len, '(', '*');
     }
 
-    // 0-1:24.2.1(150531200000S)(00811.923*m3)
-    // 0-1:24.2.1 = Gas (DSMR v4.0) on Kaifa MA105 meter
-    if (strncmp(telegram, "0-1:24.2.1", strlen("0-1:24.2.1")) == 0)
-    {
-        GAS_METER_M3 = getValue(telegram, len, '(', '*');
-    }
-
-    // 0-0:96.14.0(0001)
-    // 0-0:96.14.0 = Actual Tarif
-    if (strncmp(telegram, "0-0:96.14.0", strlen("0-0:96.14.0")) == 0)
-    {
-        ACTUAL_TARIF = getValue(telegram, len, '(', ')');
-    }
-
-    // 0-0:96.7.21(00003)
-    // 0-0:96.7.21 = Aantal onderbrekingen Elektriciteit
-    if (strncmp(telegram, "0-0:96.7.21", strlen("0-0:96.7.21")) == 0)
-    {
-        SHORT_POWER_OUTAGES = getValue(telegram, len, '(', ')');
-    }
-
-    // 0-0:96.7.9(00001)
-    // 0-0:96.7.9 = Aantal lange onderbrekingen Elektriciteit
-    if (strncmp(telegram, "0-0:96.7.9", strlen("0-0:96.7.9")) == 0)
-    {
-        LONG_POWER_OUTAGES = getValue(telegram, len, '(', ')');
-    }
-
-    // 1-0:32.32.0(00000)
-    // 1-0:32.32.0 = Aantal korte spanningsdalingen Elektriciteit in fase 1
-    if (strncmp(telegram, "1-0:32.32.0", strlen("1-0:32.32.0")) == 0)
-    {
-        SHORT_POWER_DROPS = getValue(telegram, len, '(', ')');
-    }
-
-    // 1-0:32.36.0(00000)
-    // 1-0:32.36.0 = Aantal korte spanningsstijgingen Elektriciteit in fase 1
-    if (strncmp(telegram, "1-0:32.36.0", strlen("1-0:32.36.0")) == 0)
-    {
-        SHORT_POWER_PEAKS = getValue(telegram, len, '(', ')');
-    }
-
     return validCRCFound;
 }
 
-void read_p1_hardwareserial()
+void read_p1_hardwareserial() 
 {
     if (Serial.available())
     {
@@ -659,6 +646,8 @@ void setup()
     // * Setup MQTT
     Serial.printf("MQTT connecting to: %s:%s\n", MQTT_HOST, MQTT_PORT);
 
+    // Disable SSL certificate validation for MQTT (insecure, but needed for self-signed certs)
+    espClient.setInsecure();
     mqtt_client.setServer(MQTT_HOST, atoi(MQTT_PORT));
 
 }

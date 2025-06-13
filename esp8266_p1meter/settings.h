@@ -3,7 +3,7 @@
 // **********************************
 
 // Update treshold in milliseconds, messages will only be sent on this interval
-#define UPDATE_INTERVAL 60000  // 1 minute
+#define UPDATE_INTERVAL 1000  // 1 second
 //#define UPDATE_INTERVAL 300000 // 5 minutes
 
 // * Baud rate for both hardware and software 
@@ -21,7 +21,7 @@
 #define HOSTNAME "p1meter"
 
 // * The password used for OTA
-#define OTA_PASSWORD "admin"
+#define OTA_PASSWORD "#T0pS3cr3t!"
 
 // * Wifi timeout in milliseconds
 #define WIFI_TIMEOUT 30000
@@ -31,6 +31,7 @@
 
 // * MQTT root topic
 #define MQTT_ROOT_TOPIC "sensors/power/p1meter"
+#define MQTT_JSON_TOPIC "sensors/power/p1meter/json"
 
 // * MQTT Last reconnection counter
 long LAST_RECONNECT_ATTEMPT = 0;
@@ -60,6 +61,9 @@ long GAS_METER_M3;
 long L1_INSTANT_POWER_USAGE;
 long L2_INSTANT_POWER_USAGE;
 long L3_INSTANT_POWER_USAGE;
+long L1_INSTANT_POWER_RETURNDELIVERY;
+long L2_INSTANT_POWER_RETURNDELIVERY;
+long L3_INSTANT_POWER_RETURNDELIVERY;
 long L1_INSTANT_POWER_CURRENT;
 long L2_INSTANT_POWER_CURRENT;
 long L3_INSTANT_POWER_CURRENT;
